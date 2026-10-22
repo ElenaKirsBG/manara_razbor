@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Таро Манара — разбор расклада"
+description = "Приложение для раскладов на Таро Манара: ручной ввод карт или случайная выборка из 78 карт, голосовой ввод вопроса, подробное контекстное толкование и история разборов."
+version = "1.0.0"
+id = "artifacts/manara-reading"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25241
+
+[services.development]
+run = "pnpm --filter @workspace/manara-reading run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/manara-reading", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/manara-reading/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25241"
+BASE_PATH = "/"
