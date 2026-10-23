@@ -730,6 +730,9 @@ button { cursor: pointer; }
 .ai-progress { margin-top:10px; }
 .progress-track { height:6px; border-radius:99px; background:hsl(var(--muted)); overflow:hidden; }
 .progress-track span { display:block; height:100%; width:100%; background:hsl(var(--primary)); transform-origin:left; transition:transform .3s; }
+.progress-track.indeterminate span { width:35%; animation:startup-pulse 1.4s ease-in-out infinite alternate; }
+@keyframes startup-pulse { from { transform:translateX(0); } to { transform:translateX(185%); } }
+@media (prefers-reduced-motion:reduce) { .progress-track.indeterminate span { animation:none; width:100%; opacity:.5; } }
 .progress-text { display:flex; justify-content:space-between; gap:10px; margin-top:6px; font-size:10px; color:hsl(var(--muted-foreground)); }
 .ai-error { display:flex; gap:7px; align-items:flex-start; margin-top:10px; padding:10px; border-radius:9px; background:hsl(var(--destructive) / .08); color:hsl(var(--destructive)); font-size:11px; line-height:1.5; word-break:break-word; }
 .ai-error svg { flex:none; margin-top:2px; }
@@ -739,7 +742,7 @@ button { cursor: pointer; }
 .ai-flag.ok .ai-flag-mark { background:hsl(158 26% 40%); border-color:hsl(158 26% 40%); color:#fff; }
 .ai-flag strong { display:block; font-weight:600; }
 .ai-flag em { display:block; font-style:normal; font-size:10px; color:hsl(var(--muted-foreground)); }
-.ai-details { margin-top:12px; font-size:11px; }
+.ai-details { margin-top:12px; font-size:11px; overflow-wrap:anywhere; }
 .ai-details summary { cursor:pointer; min-height:32px; display:flex; align-items:center; }
 .ai-details ol { padding-left:18px; line-height:1.65; margin:6px 0; }
 .error-state p.error-detail { margin-top:10px; padding:9px 11px; border-radius:8px; background:hsl(var(--muted)); color:hsl(var(--foreground)); font:11px var(--app-font-mono); word-break:break-word; text-align:left; }

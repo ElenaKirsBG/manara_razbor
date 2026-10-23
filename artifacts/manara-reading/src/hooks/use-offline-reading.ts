@@ -16,6 +16,11 @@ import {
   tokenizerUrl,
 } from "@/offline/models";
 import { appWasCached, modelWasCached, readFlag, writeFlag } from "@/offline/storage";
+import {
+  browserStore, isStartupStage, readSelectedModel, saveSelectedModel,
+  readStartupAttempt, saveStartupAttempt, START_CONTEXT_TOKENS, STARTUP_STAGES,
+  type StartupAttempt, type StartupStage, type AttemptStatus,
+} from "@/offline/startup-state";
 
 type ReadingInput = {
   question: string;
@@ -24,9 +29,10 @@ type ReadingInput = {
   cardIds: string[];
 };
 type Phase = "checking" | "unsupported" | "idle" | "loading" | "ready" | "generating" | "error";
-type WorkerResult = { content?: string };
+type WorkerResult = { content?: string; contextTokens?: number };
 type Pending = { resolve: (value: WorkerResult) => void; reject: (error: Error) => void; timer: number };
 const initialModel = LOCAL_MODELS[0].id;
+const modelIds = LOCAL_MODELS.map(model => model.id);
 const cards: ManaraCard[] = getManaraCardsWithImages().map((card) => ({
   ...card,
   imageUrl: `${import.meta.env.BASE_URL}cards/${card.id}.jpg`,
@@ -35,13 +41,21 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : "
 const verifiedKey = (id: string) => `${OFFLINE_VERIFIED_MARKER}${OFFLINE_CORE_REVISION}:${id}`;
 
 export function useOfflineReading() {
-  const [modelId, setModelState] = useState<string>(initialModel);
-  const modelRef = useRef<string>(initialModel);
+  const [modelId, setModelState] = useState(() => readSelectedModel(browserStore(), modelIds, initialModel));
+  const modelRef = useRef(modelId);
+  const [previousAttempt] = useState(() => readStartupAttempt(browserStore(), modelIds));
+  const [lastAttempt, setLastAttempt] = useState(previousAttempt);
+  const attemptRef = useRef(previousAttempt);
+  const [startupNotice, setStartupNotice] = useState(() =>
+    previousAttempt && ["running", "interrupted"].includes(previousAttempt.status)
+      ? `Предыдущий запуск «${getLocalModel(previousAttempt.modelId).label}» не подтвердил завершение. Последний этап: ${STARTUP_STAGES[previousAttempt.stage]}. Возможно, приложение было закрыто или перезапущено. Точная причина неизвестна; автоматического повторного скачивания нет.`
+      : "");
   const [phase, setPhase] = useState<Phase>("checking");
   const [isSupported, setSupported] = useState(false);
   const [capabilityMessage, setCapabilityMessage] = useState("Проверяем поддержку локального ИИ…");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState("");
   const [isReady, setReady] = useState(false);
   const [isCached, setCached] = useState(false);
@@ -54,12 +68,51 @@ export function useOfflineReading() {
   const pendingRef = useRef(new Map<number, Pending>());
   const serialRef = useRef(0);
   const operationRef = useRef<"init" | "generate" | null>(null);
-  useRegisterSW({
+  const epochRef = useRef(0);
+  const registrationRef = useRef<ServiceWorkerRegistration | undefined>(undefined);
+  const [updateMessage, setUpdateMessage] = useState("");
+  const { needRefresh: [updateAvailable], updateServiceWorker } = useRegisterSW({
     immediate: true,
+    onRegisteredSW: (_url, registration) => { registrationRef.current = registration; },
     onOfflineReady: () => { void appWasCached().then(setAppCached); },
     onRegisterError: () => setAppCached(false),
     // No automatic reload: a worker update must not discard the active question.
   });
+
+  const recordStage = useCallback((operation: "init" | "generate", stage: StartupStage,
+    status: AttemptStatus = "running", contextTokens?: number) => {
+    const previous = attemptRef.current;
+    const context = contextTokens ?? previous?.contextTokens ?? START_CONTEXT_TOKENS;
+    if (previous?.status === status && previous.phase === operation && previous.stage === stage &&
+        previous.modelId === modelRef.current && previous.contextTokens === context) return;
+    const now = Date.now();
+    const next: StartupAttempt = {
+      modelId: modelRef.current, phase: operation, stage, status,
+      contextTokens: context,
+      startedAt: previous?.status === "running" && previous.phase === operation ? previous.startedAt : now,
+      updatedAt: now,
+    };
+    attemptRef.current = next;
+    saveStartupAttempt(browserStore(), next);
+    setLastAttempt(next);
+  }, []);
+
+  useEffect(() => {
+    if (previousAttempt?.status === "running") {
+      const interrupted: StartupAttempt = { ...previousAttempt, status: "interrupted" };
+      attemptRef.current = interrupted;
+      saveStartupAttempt(browserStore(), interrupted);
+      setLastAttempt(interrupted);
+    }
+  }, [previousAttempt]);
+
+  useEffect(() => {
+    if (phase !== "loading" && phase !== "generating") return;
+    const start = Date.now();
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   const refreshStorage = useCallback(async () => {
     const id = modelRef.current;
@@ -75,6 +128,7 @@ export function useOfflineReading() {
   }, []);
 
   const stopWorker = useCallback((message = "Операция остановлена. Вопрос и карты остались в форме.") => {
+    epochRef.current++;
     workerRef.current?.terminate();
     workerRef.current = null;
     for (const pending of pendingRef.current.values()) {
@@ -142,19 +196,29 @@ export function useOfflineReading() {
   const prepare = useCallback(async () => {
     if (operationRef.current || !isSupported) return;
     operationRef.current = "init";
+    setStartupNotice("");
     setError("");
     setProgress(0);
     setProgressText("Подготавливаем файлы модели. Первой загрузке нужен интернет.");
     setPhase("loading");
     stopWorker();
+    const epoch = epochRef.current;
+    const checkCancelled = () => {
+      if (epoch !== epochRef.current) throw new Error("Подготовка отменена. Автоматического повторного запуска нет.");
+    };
     try {
       const model = getLocalModel(modelRef.current);
+      recordStage("init", "storage", "running", START_CONTEXT_TOKENS);
       const estimate = await navigator.storage?.estimate?.();
+      checkCancelled();
       if (estimate?.quota && !isCached &&
           estimate.quota - (estimate.usage ?? 0) < model.expectedBytes) {
         throw new Error("Браузер сообщает о недостатке места для модели. Освободите место или выберите компактную модель.");
       }
       await navigator.storage?.persist?.().catch(() => false);
+      checkCancelled();
+      recordStage("init", "worker");
+      setProgressText("Запускаем отдельный процесс ИИ. Ожидаем подтверждение запуска…");
       const worker = new Worker(new URL("../offline/llm.worker.ts", import.meta.url), { type: "module" });
       workerRef.current = worker;
       worker.onmessage = (event: MessageEvent) => {
@@ -164,11 +228,18 @@ export function useOfflineReading() {
         if (message.type === "progress") {
           setProgress(Math.max(0, Math.min(1, message.progress ?? 0)));
           setProgressText(message.text ?? "");
+          if (isStartupStage(message.stage)) {
+            recordStage(operationRef.current === "generate" ? "generate" : "init", message.stage,
+              "running", Number.isSafeInteger(message.contextTokens) ? message.contextTokens : undefined);
+          }
           return;
         }
         clearTimeout(pending.timer);
         pendingRef.current.delete(message.id);
-        if (message.type === "error") pending.reject(new Error(message.message));
+        if (message.type === "error") {
+          stopWorker();
+          pending.reject(new Error(message.message));
+        }
         else pending.resolve(message);
       };
       worker.onerror = () => {
@@ -177,21 +248,26 @@ export function useOfflineReading() {
         setError(message);
         setPhase("error");
       };
-      await request({ type: "init", modelId: model.id });
+      const result = await request({ type: "init", modelId: model.id });
+      checkCancelled();
       writeFlag(MODEL_CACHE_MARKER + model.id, true);
       setReady(true);
       setPhase("ready");
       setProgress(1);
       setProgressText("Модель запущена на этом устройстве. Качество ответов нужно проверять отдельно.");
+      recordStage("init", "ready", "complete", result.contextTokens);
       await refreshStorage();
     } catch (reason) {
       stopWorker();
       setError(errorText(reason));
       setPhase("error");
+      if (attemptRef.current?.status !== "cancelled") {
+        recordStage("init", attemptRef.current?.stage ?? "worker", "error");
+      }
     } finally {
       operationRef.current = null;
     }
-  }, [isSupported, isCached, refreshStorage, request, stopWorker]);
+  }, [isSupported, isCached, refreshStorage, request, stopWorker, recordStage]);
 
   const generate = useCallback(async (input: ReadingInput): Promise<ManaraReading> => {
     if (operationRef.current) throw new Error("Дождитесь завершения текущей операции.");
@@ -200,6 +276,7 @@ export function useOfflineReading() {
     setPhase("generating");
     setError("");
     setProgressText("Проверяем весь контекст расклада без обрезания источников…");
+    recordStage("generate", "context");
     try {
       const { systemPrompt, userPrompt } = buildManaraPrompts(input);
       const result = await request({ type: "generate", systemPrompt, userPrompt });
@@ -210,16 +287,20 @@ export function useOfflineReading() {
       }
       setPhase("ready");
       setProgressText("Локальный разбор завершён.");
+      recordStage("generate", "complete", "complete");
       return reading;
     } catch (reason) {
       const message = errorText(reason);
       setError(message);
       setPhase("error");
+      if (attemptRef.current?.status !== "cancelled") {
+        recordStage("generate", attemptRef.current?.stage ?? "generate", "error");
+      }
       throw new Error(message);
     } finally {
       operationRef.current = null;
     }
-  }, [isReady, request]);
+  }, [isReady, request, recordStage]);
 
   const setModelId = useCallback((id: string) => {
     if (operationRef.current || id === modelRef.current) return;
@@ -227,6 +308,7 @@ export function useOfflineReading() {
     stopWorker();
     modelRef.current = id;
     setModelState(id);
+    saveSelectedModel(browserStore(), id);
     setCached(false);
     setError("");
     setPhase(isSupported ? "idle" : "unsupported");
@@ -234,9 +316,27 @@ export function useOfflineReading() {
   }, [isSupported, refreshStorage, stopWorker]);
 
   const cancel = useCallback(() => {
+    if (!operationRef.current) return;
+    recordStage(operationRef.current, attemptRef.current?.stage ?? "worker", "cancelled");
     if (operationRef.current === "init") stopWorker("Загрузка остановлена. Уже скачанные файлы могут остаться в кеше.");
-    else if (operationRef.current === "generate") workerRef.current?.postMessage({ type: "cancel" });
-  }, [stopWorker]);
+    else workerRef.current?.postMessage({ type: "cancel" });
+  }, [stopWorker, recordStage]);
+
+  const checkForUpdate = useCallback(async () => {
+    if (operationRef.current) return;
+    try {
+      const registration = registrationRef.current ?? await navigator.serviceWorker?.getRegistration();
+      if (!registration) throw new Error("Регистрация офлайн-приложения ещё не готова.");
+      await registration.update();
+      setUpdateMessage("Проверка обновления выполнена. Если новая версия готова, появится кнопка установки.");
+    } catch (reason) { setUpdateMessage(errorText(reason)); }
+  }, []);
+  const applyUpdate = useCallback(async () => {
+    if (operationRef.current || !updateAvailable) return;
+    if (!window.confirm("Обновить приложение? Страница перезагрузится. Введённый вопрос, выбранные карты и текущий ответ будут очищены. Загруженные файлы модели не удаляются.")) return;
+    stopWorker();
+    await updateServiceWorker(true);
+  }, [stopWorker, updateAvailable, updateServiceWorker]);
 
   const removeModel = useCallback(async () => {
     if (operationRef.current) return;
@@ -259,5 +359,7 @@ export function useOfflineReading() {
     isPending: phase === "generating", busy: phase === "loading" || phase === "generating",
     isReady, isCached, appCached, offlineVerified, isOnline, isStandalone,
     models: LOCAL_MODELS, modelId, setModelId, prepare, generate, cancel, removeModel, refreshStorage,
+    elapsedSeconds, lastAttempt, startupNotice, startupStageLabel: lastAttempt ? STARTUP_STAGES[lastAttempt.stage] : "",
+    updateAvailable, updateMessage, checkForUpdate, applyUpdate,
   };
 }

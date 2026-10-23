@@ -34,5 +34,5 @@ for (const count of [1,3,12]) {
 const worker = await readFile(new URL("../src/offline/llm.worker.ts",import.meta.url),"utf8");
 assert(worker.includes("tokenizer.encode"));
 assert(worker.includes('reason === "length"'));
-assert(worker.includes("inputTokens + LOCAL_OUTPUT_TOKENS > LOCAL_CONTEXT_TOKENS"));
+assert(worker.includes("contextForInput(inputTokens, LOCAL_OUTPUT_TOKENS, LOCAL_CONTEXT_TOKENS)"));
 console.info("Offline core verified: 78 cards, complete source angles, combination/safety prompts, 1/3/12-card order, empty and partial response rejection. This does not test real GPU inference or iPhone behavior.");

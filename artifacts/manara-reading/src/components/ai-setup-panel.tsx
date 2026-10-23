@@ -26,6 +26,7 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
   const busy = offline.busy || serverBusy;
   const model = offline.models.find((item) => item.id === offline.modelId);
   const percent = Math.round(offline.progress * 100);
+  const elapsed = `${Math.floor(offline.elapsedSeconds / 60)}:${String(offline.elapsedSeconds % 60).padStart(2, '0')}`;
 
   return (
     <section className="ai-setup" aria-labelledby="ai-setup-title" data-testid="section-ai-setup">
@@ -56,6 +57,10 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
       {engine === 'device' && (
         <div className="ai-device" data-testid="section-device-ai">
           <p className="ai-capability" role="status" data-testid="text-capability-message">{offline.capabilityMessage || 'Проверяем возможности браузера…'}</p>
+          <p className="ai-note" data-testid="text-startup-version">Запуск модели · версия 2</p>
+          {offline.startupNotice && (
+            <p className="ai-warning" role="alert" data-testid="notice-interrupted-startup">{offline.startupNotice}</p>
+          )}
 
           {offline.isSupported && (
             <>
@@ -70,20 +75,22 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
                 ))}
               </div>
               <p className="ai-note" data-testid="text-model-tradeoff">
-                Компактная модель (1.5B) быстрее и легче для памяти, но отвечает проще. Тяжёлая (3B) связывает карты лучше, но чаще упирается в память iPhone. Для любой из них возможны слабые ответы и ошибки нехватки памяти.
+                Компактная модель (1.5B) требует меньше памяти, но может отвечать проще. Крупная (3B) потенциально лучше справляется со сложными сочетаниями, но её преимущество и устойчивость на вашем iPhone не проверены. Для любой модели возможны слабые ответы и ошибки памяти.
               </p>
 
               {offline.phase === 'loading' ? (
                 <div className="ai-progress" data-testid="status-model-loading">
-                  <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} data-testid="progress-model-load">
-                    <span style={{ transform: `scaleX(${offline.progress})` }} />
+                  <div className={`progress-track${percent === 0 ? ' indeterminate' : ''}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent || undefined} aria-valuetext={offline.progressText} data-testid="progress-model-load">
+                    <span style={percent === 0 ? undefined : { transform: `scaleX(${offline.progress})` }} />
                   </div>
-                  <div className="progress-text"><span data-testid="text-progress">{offline.progressText || 'Подготовка…'}</span><span>{percent}%</span></div>
+                  <div className="progress-text"><span data-testid="text-progress">{offline.progressText || 'Подготовка…'}</span><span>{percent > 0 ? `${percent}%` : 'подготовка'}</span></div>
+                  <p className="ai-note" data-testid="text-startup-elapsed">Прошло {elapsed}. Этап: {offline.startupStageLabel || 'начало запуска'}. Не закрывайте приложение.</p>
                   <button type="button" className="retry-button" data-testid="button-cancel-model-load" onClick={offline.cancel}>Отменить</button>
                 </div>
               ) : offline.phase === 'generating' ? (
                 <div className="ai-progress" data-testid="status-model-generating">
-                  <div className="progress-text"><span>Модель читает расклад. Не сворачивайте приложение.</span></div>
+                  <div className="progress-text"><span>{offline.progressText || 'Модель читает расклад. Не сворачивайте приложение.'}</span></div>
+                  <p className="ai-note" data-testid="text-generation-elapsed">Прошло {elapsed}. Этап: {offline.startupStageLabel}.</p>
                   <button type="button" className="retry-button" data-testid="button-cancel-generation" onClick={offline.cancel}>Остановить разбор</button>
                 </div>
               ) : offline.isReady ? (
@@ -137,6 +144,23 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
             </ol>
             <button type="button" className="retry-button" data-testid="button-refresh-storage" disabled={busy} onClick={() => void offline.refreshStorage()}>Обновить статус хранилища</button>
           </details>
+          {offline.lastAttempt && (
+            <details className="ai-details" data-testid="section-startup-diagnostics">
+              <summary>Последний этап запуска</summary>
+              <p className="ai-note">Модель: {offline.lastAttempt.modelId}. Этап: {offline.startupStageLabel}. Состояние: {({
+                running: 'в процессе', interrupted: 'завершение не подтверждено',
+                complete: 'завершено', error: 'ошибка', cancelled: 'отменено',
+              })[offline.lastAttempt.status]}. Окно контекста: {offline.lastAttempt.contextTokens} токенов.</p>
+              <p className="ai-note">На телефоне сохраняются только эти технические сведения и выбор модели — без вопроса, карт и ответа.</p>
+            </details>
+          )}
+          <div className="ai-actions">
+            <button type="button" className="retry-button" data-testid="button-check-app-update" disabled={busy} onClick={() => void offline.checkForUpdate()}>Проверить обновление приложения</button>
+            {offline.updateAvailable && (
+              <button type="button" className="retry-button" data-testid="button-apply-app-update" disabled={busy} onClick={() => void offline.applyUpdate()}>Установить новую версию</button>
+            )}
+          </div>
+          {offline.updateMessage && <p className="ai-note" role="status">{offline.updateMessage}</p>}
         </div>
       )}
     </section>
