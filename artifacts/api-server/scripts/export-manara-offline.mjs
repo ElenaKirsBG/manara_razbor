@@ -14,26 +14,9 @@ const result = await build({
     resolveDir: root,
     sourcefile: "manara-offline-entry.ts",
     contents: `
-      import { CreateManaraReadingResponse } from "@workspace/api-zod";
       export { buildManaraPrompts } from "./src/lib/manara-prompts";
       export { getManaraCardsWithImages } from "./src/routes/manara-cards";
-      export function validateOfflineReading(raw, cardIds) {
-        const reading = CreateManaraReadingResponse.parse(raw);
-        if (reading.cardAnalysis.length !== cardIds.length ||
-            reading.cardAnalysis.some((c, i) => c.cardId !== cardIds[i] || c.position !== i + 1)) {
-          throw new Error("Модель изменила состав или порядок карт. Разбор не показан.");
-        }
-        const texts = [reading.overview, reading.cardDynamics, reading.likelyAnswer,
-          ...reading.cardAnalysis.flatMap(c => [c.interpretation, c.connectionToQuestion])];
-        if (texts.some(t => !t.trim()) ||
-            reading.alternativeReadings.length < 1 ||
-            reading.alternativeReadings.some(t => !t.trim()) ||
-            reading.reflectionQuestions.length < 2 ||
-            reading.reflectionQuestions.some(t => !t.trim())) {
-          throw new Error("Модель вернула неполный разбор. Вопрос и карты сохранены в форме.");
-        }
-        return reading;
-      }
+      export { validateManaraReading as validateOfflineReading } from "./src/lib/manara-response";
     `,
     loader: "ts",
   },

@@ -24,8 +24,9 @@ const output = {
     cardId: card.id, cardName: card.name, position: i + 1,
     interpretation: "Заглушка.", connectionToQuestion: "Заглушка.",
   })),
-  cardDynamics: "Заглушка.", likelyAnswer: "Заглушка.",
-  alternativeReadings: ["Заглушка."], reflectionQuestions: ["Заглушка."],
+  cardDynamics: `Транспортная заглушка: ${expected.selectedCards.map(card => card.name).join(" и ")}.`,
+  likelyAnswer: "Заглушка.",
+  alternativeReadings: ["Заглушка."], reflectionQuestions: ["Первый тестовый вопрос?", "Второй тестовый вопрос?"],
 };
 let calls = 0;
 let mockOutput = output;

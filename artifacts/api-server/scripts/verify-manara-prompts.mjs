@@ -27,7 +27,8 @@ function verifyContext(request) {
   assert.equal(context.querentGender, request.querentGender);
   assert.equal(context.readingMode, request.mode);
   assert.deepEqual(context.orderedCards.map((c) => c.id), request.cardIds);
-  assert.deepEqual(context.requiredShape.cardAnalysis.map((c) => c.cardId), request.cardIds);
+  assert.equal(Object.hasOwn(context, "requiredShape"), false, "No answer-shaped instruction template");
+  assert.deepEqual(context.responseFields, ["overview", "cardAnalysis", "cardDynamics", "likelyAnswer", "alternativeReadings", "reflectionQuestions"]);
   assert.deepEqual(result.selectedCards.map((c) => c.id), request.cardIds);
   assert.equal(context.orderedCards.length, request.cardIds.length);
   assert.equal(context.spreadContext.cardCount, request.cardIds.length);
@@ -53,11 +54,7 @@ function verifyContext(request) {
     assert.deepEqual(card.reflectionHints, knowledge.reflectionQuestions);
     assert.deepEqual(card.sourceReferences, knowledge.sources);
     assert.deepEqual(card.sourceNotes, knowledge.sourceNotes, `${card.id}: lost attribution`);
-    assert.deepEqual(context.requiredShape.cardAnalysis[i], {
-      cardId: card.id, cardName: card.name, position: i + 1,
-      interpretation: "вклад карты в общую историю и как её смысл уточняется другими выбранными картами; не отдельная словарная трактовка",
-      connectionToQuestion: "как это связано с вопросом и что остаётся гипотезой",
-    });
+    assert.deepEqual(context.cardAnalysisFields, ["cardId", "cardName", "position", "interpretation", "connectionToQuestion"]);
     for (const source of card.sourceReferences) {
       assert.equal(source.section, card.name);
       assert.equal(context.sourceTitlesById[source.sourceId], manaraSourceRegistry[source.sourceId].title);
@@ -112,7 +109,7 @@ for (const [id, anchors] of Object.entries(disagreementAnchors)) {
 // adjacent pairs. Endpoints occur once in pairs, interior cards twice.
 const ranked = manaraCards.map((card) => {
   const c = JSON.parse(buildManaraPrompts({ ...input, cardIds: [card.id] }).userPrompt);
-  const base = Buffer.byteLength(JSON.stringify(c.orderedCards[0]) + JSON.stringify(c.requiredShape.cardAnalysis[0]));
+  const base = Buffer.byteLength(JSON.stringify(c.orderedCards[0]));
   const side = Buffer.byteLength(JSON.stringify({ id: card.id, name: card.name, position: 1 }));
   return {
     id: card.id, edge: base + side, interior: base + 2 * side,

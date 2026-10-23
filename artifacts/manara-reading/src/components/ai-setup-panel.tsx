@@ -57,7 +57,7 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
       {engine === 'device' && (
         <div className="ai-device" data-testid="section-device-ai">
           <p className="ai-capability" role="status" data-testid="text-capability-message">{offline.capabilityMessage || 'Проверяем возможности браузера…'}</p>
-              <p className="ai-note" data-testid="text-startup-version">Запуск модели · версия 6 · обязательная структура ответа</p>
+              <p className="ai-note" data-testid="text-startup-version">Запуск модели · версия 7 · защита от копирования инструкций</p>
           {offline.startupNotice && (
             <p className="ai-warning" role="alert" data-testid="notice-interrupted-startup">{offline.startupNotice}</p>
           )}

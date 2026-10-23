@@ -20,7 +20,7 @@ for (const count of [1,3,12]) {
   assert(prompts.systemPrompt.includes("ГЛАВНЫЙ ПРИОРИТЕТ"));
   assert(prompts.systemPrompt.includes("Принуждение, давление"));
   const fixture = {
-    overview:"Общий смысл.", cardDynamics:"Связь карт.", likelyAnswer:"Ответ-гипотеза.",
+    overview:"Общий смысл.", cardDynamics:cards.slice(0,count).map(c=>c.name).join(" и ") + ": тестовая связь.", likelyAnswer:"Ответ-гипотеза.",
     cardAnalysis:cards.slice(0,count).map((c,i)=>({
       cardId:c.id,cardName:c.name,position:i+1,interpretation:"Вклад в сочетание.",connectionToQuestion:"Связь с вопросом.",
     })), alternativeReadings:["Альтернативное совместное чтение."],reflectionQuestions:["Что известно?","Что нужно уточнить?"],

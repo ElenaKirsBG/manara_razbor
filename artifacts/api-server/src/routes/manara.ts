@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
 import {
   CreateManaraReadingBody,
-  CreateManaraReadingResponse,
   GetManaraCardsResponse,
 } from "@workspace/api-zod";
 import {
@@ -14,6 +13,7 @@ import {
   MANARA_LOCAL_CONTEXT_TOKENS,
   MANARA_LOCAL_OUTPUT_TOKENS,
 } from "../lib/manara-prompts";
+import { validateManaraReading } from "../lib/manara-response";
 
 const router: IRouter = Router();
 
@@ -102,31 +102,27 @@ router.post("/manara/readings", async (req, res) => {
     return;
   }
 
-  let selectedCards;
   try {
-    selectedCards = findManaraCards(input.cardIds);
+    findManaraCards(input.cardIds);
   } catch {
     res.status(400).json({ error: "В раскладе есть карта, которой нет в колоде Манара." });
     return;
   }
 
   const provider = getAiProvider();
+  let responseReceived = false;
   try {
     const { systemPrompt, userPrompt } = buildManaraPrompts(input);
     const content = await generateInterpretationContent(systemPrompt, userPrompt);
-    const parsed = CreateManaraReadingResponse.parse(JSON.parse(content));
-    if (parsed.cardAnalysis.length !== selectedCards.length) {
-      throw new Error("The model returned an incomplete card-by-card analysis.");
-    }
-    if (parsed.cardAnalysis.some((card, index) =>
-      card.cardId !== selectedCards[index].id || card.position !== index + 1)) {
-      throw new Error("The model changed the order or identity of selected cards.");
-    }
+    responseReceived = true;
+    const parsed = validateManaraReading(JSON.parse(content), input.cardIds);
     res.json(parsed);
   } catch (error) {
     req.log.error({ err: error }, "Manara interpretation generation failed");
     res.status(502).json({
-      error: provider === "ollama"
+      error: responseReceived
+        ? "Модель не вернула полноценный разбор: ответ не прошёл проверку и не показан как интерпретация. Вопрос и карты остались в форме."
+        : provider === "ollama"
         ? `Локальная модель недоступна или не вернула разбор. Запустите Ollama и проверьте, что модель ${process.env.OLLAMA_MODEL ?? "qwen2.5:7b"} загружена; вопрос и карты остались в форме.`
         : "Не удалось получить корректное толкование. Попробуйте ещё раз; вопрос и карты остались в форме.",
     });

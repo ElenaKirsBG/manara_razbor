@@ -48,7 +48,7 @@ try {
         cardId:card.id, cardName:card.name, position:i+1,
         interpretation:"Вклад карты в сочетание.", connectionToQuestion:"Связь с вопросом.",
       })),
-      cardDynamics:"Совместная динамика всех карт.",
+      cardDynamics:cards.map(card=>card.name).join(" и ") + ": тестовая совместная динамика.",
       likelyAnswer:"Осторожный ответ.",
       alternativeReadings:["Другая возможная гипотеза."],
       reflectionQuestions:["Что известно?", "Что нужно проверить?"],
