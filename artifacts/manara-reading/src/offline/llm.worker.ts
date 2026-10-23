@@ -8,6 +8,7 @@ import {
 } from "./models";
 import { contextForInput, START_CONTEXT_TOKENS } from "./startup-state";
 import { LOCAL_RESPONSE_FORMAT } from "./response-format";
+import { countTokensInIsolatedWorker } from "./token-counter";
 
 let engine: MLCEngine | null = null;
 let cancelled = false;
@@ -15,6 +16,7 @@ let activeModelId = "";
 let contextTokens = START_CONTEXT_TOKENS;
 let currentRequestId = 0;
 let resizing = false;
+let counterController: AbortController | null = null;
 
 function send(id: number, type: string, fields: Record<string, unknown> = {}) {
   self.postMessage({ id, type, ...fields });
@@ -33,16 +35,20 @@ async function ensureTokenizerFile(modelId: string) {
 async function countInputTokens(modelId: string, text: string) {
   const response = await (await caches.open(LOCAL_MODEL_CACHE)).match(tokenizerUrl(modelId));
   if (!response) throw new Error("Файл токенизатора удалён из кэша. Подготовьте модель заново.");
-  const { Tokenizer } = await import("@mlc-ai/web-tokenizers");
-  const tokenizer = await Tokenizer.fromJSON(await response.arrayBuffer());
-  try { return tokenizer.encode(text).length + 512; }
-  finally { tokenizer.dispose(); }
+  const controller = new AbortController();
+  counterController = controller;
+  try {
+    return await countTokensInIsolatedWorker(await response.arrayBuffer(), text, { signal: controller.signal }) + 512;
+  } finally {
+    if (counterController === controller) counterController = null;
+  }
 }
 
 self.onmessage = async (event: MessageEvent) => {
   const { id, type, modelId, systemPrompt, userPrompt } = event.data;
   if (type === "cancel") {
     cancelled = true;
+    counterController?.abort();
     engine?.interruptGenerate();
     return;
   }
@@ -82,8 +88,8 @@ self.onmessage = async (event: MessageEvent) => {
     // Use the model's real tokenizer. Reserve an additional 512 tokens for
     // Qwen's message framing; never truncate cards, the question, or sources.
     send(id, "progress", { progress: 0, stage: "context", text: "Токенизатор проверяет весь вопрос, все карты и источники…" });
-    // The temporary counter is disposed before any larger GPU allocation.
-    // Initialization no longer keeps two tokenizer instances alive.
+    // The temporary counter's whole worker is terminated before allocation
+    // or grammar compilation, not merely its tokenizer object disposed.
     const inputTokens = await countInputTokens(activeModelId, systemPrompt + userPrompt);
     if (cancelled) throw new Error("Разбор остановлен.");
     const needed = contextForInput(inputTokens, LOCAL_OUTPUT_TOKENS, LOCAL_CONTEXT_TOKENS);
@@ -95,10 +101,11 @@ self.onmessage = async (event: MessageEvent) => {
       finally { resizing = false; }
     }
     if (cancelled) throw new Error("Разбор остановлен.");
-    send(id, "progress", { progress: 0, stage: "generate", contextTokens, text: `Контекст проверен: ${inputTokens} токенов. ИИ читает сочетание карт…` });
     await engine.resetChat();
+    send(id, "progress", { progress: 0, stage: "response", contextTokens, text: `Контекст проверен: ${inputTokens} токенов. Подготавливаем формат ответа и обрабатываем полный расклад…` });
     let content = "";
     let finished = false;
+    let lastProgressAt = 0;
     const stream = await engine.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
@@ -117,7 +124,12 @@ self.onmessage = async (event: MessageEvent) => {
         throw new Error("Модель не завершила разбор в пределах длины ответа. Неполный результат не показан; вопрос и карты остались в форме.");
       }
       if (reason === "stop") finished = true;
-      send(id, "progress", { progress: 0, stage: "generate", text: `Локальный ИИ составляет разбор · ${content.length} знаков. Держите приложение открытым.` });
+      // Do not rerender the entire card catalogue for every generated token.
+      const now = Date.now();
+      if (content && (lastProgressAt === 0 || now - lastProgressAt >= 750 || finished)) {
+        send(id, "progress", { progress: 0, stage: "generate", text: `Локальный ИИ составляет разбор · ${content.length} знаков. Держите приложение открытым.` });
+        lastProgressAt = now;
+      }
     }
     if (cancelled || !finished || !content) {
       throw new Error("Локальная модель не завершила ответ. Вопрос и карты остались в форме.");

@@ -33,15 +33,25 @@ const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw n
 assert.equal(state.readSelectedModel(blocked, ids, ids[0]), ids[0]);
 assert.equal(state.readStartupAttempt(blocked, ids), null);
 assert.doesNotThrow(() => state.saveStartupAttempt(blocked, running));
-for (const [input, expected] of [[0,8192],[4096,8192],[4097,16384],[12288,16384],[12289,32768],[28672,32768]]) {
+for (const [input, expected] of [[0,8192],[4096,8192],[4097,9216],[12288,16384],[12289,17408],[28672,32768]]) {
   const actual = state.contextForInput(input,4096,32768);
   assert.equal(actual, expected);
   assert(actual >= input+4096);
 }
 for (const input of [28673,NaN,-1,1.5]) assert.throws(() => state.contextForInput(input,4096,32768));
+for (let input = 0; input <= 28672; input += 29) {
+  const actual = state.contextForInput(input,4096,32768);
+  assert(actual >= input + 4096 && actual <= 32768);
+  if (input + 4096 > 8192) assert(actual - input - 4096 < 1024);
+}
 const worker = await readFile(new URL("../src/offline/llm.worker.ts", import.meta.url),"utf8");
 assert(worker.includes('await import("@mlc-ai/web-llm")'));
 assert(!worker.includes('import { CreateMLCEngine'));
 assert(worker.includes("context_window_size: contextTokens"));
-assert(worker.includes("finally { tokenizer.dispose(); }"));
-console.info("Startup safety verified: model selection survives reload; technical-only journal; blocked/corrupt storage safe; 8k/16k/32k windows fit full input plus output or reject; runtime and tokenizer load lazily. No real iPhone/GPU inference evaluated.");
+assert(worker.includes("countTokensInIsolatedWorker"));
+assert(!worker.includes('import("@mlc-ai/web-tokenizers")'));
+assert(state.isStartupStage("response"));
+const counterWorker = await readFile(new URL("../src/offline/token-count.worker.ts", import.meta.url), "utf8");
+assert(counterWorker.includes("finally { tokenizer.dispose(); }"));
+assert(counterWorker.includes("self.close()"));
+console.info("Startup safety verified: model selection survives reload; technical-only journal; blocked/corrupt storage safe; context rounded to 1k retains full input and 4096-token answer reserve; isolated temporary tokenizer. No real iPhone/GPU inference evaluated.");

@@ -10,6 +10,7 @@ export const STARTUP_STAGES = {
   model: "Загрузка модели и выделение памяти GPU",
   context: "Подсчёт полного контекста расклада",
   resize: "Расширение памяти под полный расклад",
+  response: "Подготовка формата ответа и обработка полного расклада",
   generate: "Составление ответа",
   ready: "Модель запущена",
   complete: "Разбор завершён",
@@ -74,5 +75,7 @@ export function contextForInput(inputTokens: number, outputTokens: number, maxim
   if (required > maximum) {
     throw new Error(`Весь расклад не помещается в контекст: ${inputTokens} входных токенов и ${outputTokens} для ответа, предел ${maximum}. Карты и источники не обрезались. Уменьшите расклад или сократите вопрос.`);
   }
-  return [START_CONTEXT_TOKENS, 16384, maximum].find(size => size >= required && size <= maximum) ?? maximum;
+  // Avoid almost doubling GPU KV-cache allocation just above 8k/16k.
+  // Keep the complete input and the same output reserve, rounded to 1k pages.
+  return Math.min(maximum, Math.max(START_CONTEXT_TOKENS, Math.ceil(required / 1024) * 1024));
 }

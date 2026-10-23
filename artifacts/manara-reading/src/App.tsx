@@ -101,7 +101,10 @@ function Home() {
       : { kind: 'none', text: '' });
   const [draftConfirm, setDraftConfirm] = useState<'delete' | null>(null);
   const [engine, setEngine] = useState<Engine>('device');
-  const [deviceError, setDeviceError] = useState('');
+  const [deviceError, setDeviceError] = useState(() =>
+    offline.lastAttempt?.phase === 'generate' && ['running', 'interrupted'].includes(offline.lastAttempt.status)
+      ? 'Предыдущий разбор не подтвердил завершение: результат недоступен. Последний подтверждённый этап указан в настройках. Черновик восстанавливается отдельно, если сохранение было включено и браузер не удалил данные.'
+      : '');
   const readingMutation = useCreateManaraReading();
   const [question, setQuestion] = useState(initialDraft.draft?.question ?? '');
   const [dictationState, setDictationState] = useState<'idle' | 'listening' | 'stopped' | 'error' | 'unsupported'>('idle');
@@ -543,7 +546,7 @@ function Home() {
                 <h2 className="reader-heading">Интерпретация</h2>
               </div>
               <div className="reader-status" data-testid="status-reading-state">
-                {isPending ? <><span className="status-dot" />В процессе</> : reading ? <><Check size={13} />Готово</> : <><ChevronDown size={13} />Ожидает вопроса</>}
+                {isPending ? <><span className="status-dot" />В процессе</> : hasError ? <><AlertCircle size={13} />Разбор не завершён</> : reading ? <><Check size={13} />Готово</> : <><ChevronDown size={13} />Ожидает вопроса</>}
               </div>
             </div>
             <div className="reader-content">
@@ -558,7 +561,7 @@ function Home() {
                   <div className="skeleton-line" style={{ width: '96%' }} />
                   <div className="skeleton-line" style={{ width: '76%' }} />
                   <p className="result-text" style={{ color: 'hsl(var(--muted-foreground))', marginTop: 22 }} data-testid="text-reading-loading-copy">
-                    Сопоставляем каждый образ с вашим вопросом. Это займёт немного времени.
+                    {engine === 'device' ? (offline.progressText || 'Сопоставляем каждый образ с вашим вопросом.') : 'Сопоставляем каждый образ с вашим вопросом. Это займёт немного времени.'}
                   </p>
                   {engine === 'device' && <button type="button" className="retry-button" data-testid="button-cancel-reading" onClick={offline.cancel}>Остановить</button>}
                 </div>
@@ -566,9 +569,13 @@ function Home() {
                 <div className="error-state" role="alert" data-testid="status-reading-error">
                   <div className="error-symbol"><AlertCircle size={20} /></div>
                   <h3>Не получилось прочитать расклад</h3>
-                  <p>{engine === 'device' ? 'Локальный разбор не завершён. Причина указана ниже — это не обязательно нехватка памяти или ограничение модели. Вопрос и карты остались в открытой форме; не обновляйте страницу.' : 'Сервер вернул ошибку; автоматических повторов нет. Ваш вопрос и карты остались в открытой форме.'}</p>
+                  <p>{engine === 'device' ? 'Локальный разбор не завершён. Подробности ниже — это не обязательно нехватка памяти. Если страница перезапустилась, вопрос и карты восстанавливаются только из сохранённого черновика.' : 'Сервер вернул ошибку; автоматических повторов нет. Ваш вопрос и карты остались в открытой форме.'}</p>
                   <p className="error-detail" data-testid="text-reading-error-detail">{engine === 'device' ? deviceError : serverErrorText}</p>
-                  <button type="button" className="retry-button" data-testid="button-retry-reading" onClick={retryReading}>Повторить разбор</button>
+                  {lastRequest ? (
+                    <button type="button" className="retry-button" data-testid="button-retry-reading" disabled={engine === 'device' && !offline.isReady} onClick={retryReading}>Повторить разбор</button>
+                  ) : (
+                    <p className="error-detail">Для нового разбора запустите модель в настройках, проверьте восстановленный вопрос и карты и нажмите «Прочитать расклад».</p>
+                  )}
                 </div>
               ) : reading ? (
                 <article className="reading-result" data-testid="article-reading">
