@@ -7,7 +7,7 @@ import {
   tokenizerUrl,
 } from "./models";
 import { contextForInput, START_CONTEXT_TOKENS } from "./startup-state";
-import { LOCAL_RESPONSE_FORMAT } from "./response-format";
+import { buildLocalResponseFormat } from "./response-format";
 import { countTokensInIsolatedWorker } from "./token-counter";
 
 let engine: MLCEngine | null = null;
@@ -45,7 +45,7 @@ async function countInputTokens(modelId: string, text: string) {
 }
 
 self.onmessage = async (event: MessageEvent) => {
-  const { id, type, modelId, systemPrompt, userPrompt } = event.data;
+  const { id, type, modelId, systemPrompt, userPrompt, selectedCards } = event.data;
   if (type === "cancel") {
     cancelled = true;
     counterController?.abort();
@@ -85,6 +85,7 @@ self.onmessage = async (event: MessageEvent) => {
       throw new Error("Сначала загрузите и запустите локальную модель.");
     }
     cancelled = false;
+    const responseFormat = buildLocalResponseFormat(selectedCards);
     // Use the model's real tokenizer. Reserve an additional 512 tokens for
     // Qwen's message framing; never truncate cards, the question, or sources.
     send(id, "progress", { progress: 0, stage: "context", text: "Токенизатор проверяет весь вопрос, все карты и источники…" });
@@ -113,7 +114,7 @@ self.onmessage = async (event: MessageEvent) => {
       ],
       temperature: 0.35,
       max_tokens: LOCAL_OUTPUT_TOKENS,
-      response_format: LOCAL_RESPONSE_FORMAT,
+      response_format: responseFormat,
       stream: true,
     });
     for await (const chunk of stream) {

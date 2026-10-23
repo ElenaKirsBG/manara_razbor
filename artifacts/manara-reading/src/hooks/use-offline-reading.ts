@@ -279,7 +279,12 @@ export function useOfflineReading() {
     recordStage("generate", "context");
     try {
       const { systemPrompt, userPrompt } = buildManaraPrompts(input);
-      const result = await request({ type: "generate", systemPrompt, userPrompt });
+      const selectedCards = input.cardIds.map(id => {
+        const card = cards.find(candidate => candidate.id === id);
+        if (!card) throw new Error("В раскладе найдена неизвестная карта.");
+        return { id: card.id, name: card.name };
+      });
+      const result = await request({ type: "generate", systemPrompt, userPrompt, selectedCards });
       const reading = validateOfflineReading(JSON.parse(result.content ?? ""), input.cardIds);
       if (!navigator.onLine && await appWasCached()) {
         writeFlag(verifiedKey(modelRef.current), true);
@@ -290,7 +295,9 @@ export function useOfflineReading() {
       recordStage("generate", "complete", "complete");
       return reading;
     } catch (reason) {
-      const message = errorText(reason);
+      const message = reason instanceof SyntaxError || (reason instanceof Error && reason.name === "ZodError")
+        ? "Модель вернула ответ без обязательных частей разбора или в неверном формате. Неполная интерпретация не показана. Вопрос и карты остались в форме."
+        : errorText(reason);
       setError(message);
       setPhase("error");
       if (attemptRef.current?.status !== "cancelled") {
