@@ -333,7 +333,7 @@ export function useOfflineReading() {
   }, []);
   const applyUpdate = useCallback(async () => {
     if (operationRef.current || !updateAvailable) return;
-    if (!window.confirm("Обновить приложение? Страница перезагрузится. Введённый вопрос, выбранные карты и текущий ответ будут очищены. Загруженные файлы модели не удаляются.")) return;
+    if (!window.confirm("Обновить приложение? Страница перезагрузится. Сохранённый локальный черновик вопроса и карт можно будет восстановить, если сохранение включено и браузер его не удалил. Текущий ответ и несохранённые изменения будут потеряны. Загруженные файлы модели не удаляются.")) return;
     stopWorker();
     await updateServiceWorker(true);
   }, [stopWorker, updateAvailable, updateServiceWorker]);

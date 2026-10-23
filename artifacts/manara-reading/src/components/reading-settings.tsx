@@ -34,7 +34,7 @@ export function ReadingSettings({ value, onChange, saved }: Props) {
         </div>
       </fieldset>
       <p className="reading-settings-note" role="status">
-        {saved ? "Выбор сохраняется на этом устройстве. Меняются весь интерфейс и текст разбора." :
+        {saved ? "Выбор сохраняется на этом устройстве. Меняются размер и цвет основного текста." :
           "Настройки действуют сейчас, но браузер не разрешил сохранить их после закрытия."}
       </p>
     </section>

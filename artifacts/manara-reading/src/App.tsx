@@ -1,5 +1,8 @@
 import { type CSSProperties, type ReactNode } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  clearReadingDraft, loadReadingDraft, readDraftEnabled, saveReadingDraft, writeDraftEnabled,
+} from '@/lib/reading-draft';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCreateManaraReading } from '@workspace/api-client-react';
 import type { ManaraCard, ManaraReading } from '@workspace/api-client-react';
@@ -81,21 +84,34 @@ function Home() {
     "--foreground": textColor.hsl,
     "--muted-foreground": textColor.hsl,
     "--card-foreground": textColor.hsl,
-    "--primary": textColor.hsl,
     "--secondary-foreground": textColor.hsl,
   } as CSSProperties;
+  const [view, setView] = useState<'spread' | 'settings'>('spread');
+  const getStorage = () => { try { return window.localStorage; } catch { return undefined; } };
+  const [initialDraft] = useState(() => {
+    const storage = getStorage();
+    const enabled = readDraftEnabled(storage);
+    const draft = enabled ? loadReadingDraft(storage, offline.cards.map((c) => c.id)) : null;
+    return { enabled, draft, blocked: !storage };
+  });
+  const [draftEnabled, setDraftEnabled] = useState(initialDraft.enabled);
+  const [draftStatus, setDraftStatus] = useState<{ kind: 'none' | 'restored' | 'saved' | 'error'; text: string }>(
+    initialDraft.draft ? { kind: 'restored', text: 'Черновик восстановлен из этого браузера.' }
+      : initialDraft.blocked ? { kind: 'error', text: 'Браузер не даёт доступ к локальному хранилищу: черновик не сохраняется.' }
+      : { kind: 'none', text: '' });
+  const [draftConfirm, setDraftConfirm] = useState<'delete' | null>(null);
   const [engine, setEngine] = useState<Engine>('device');
   const [deviceError, setDeviceError] = useState('');
   const readingMutation = useCreateManaraReading();
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState(initialDraft.draft?.question ?? '');
   const [dictationState, setDictationState] = useState<'idle' | 'listening' | 'stopped' | 'error' | 'unsupported'>('idle');
   const [dictationMessage, setDictationMessage] = useState('');
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const [gender, setGender] = useState<'woman' | 'man' | 'not_specified'>('not_specified');
-  const [mode, setMode] = useState<'detailed' | 'psychological'>('detailed');
-  const [selectionMode, setSelectionMode] = useState<'manual' | 'random'>('manual');
-  const [randomQuantity, setRandomQuantity] = useState(3);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [gender, setGender] = useState<'woman' | 'man' | 'not_specified'>(initialDraft.draft?.gender ?? 'not_specified');
+  const [mode, setMode] = useState<'detailed' | 'psychological'>(initialDraft.draft?.mode ?? 'detailed');
+  const [selectionMode, setSelectionMode] = useState<'manual' | 'random'>(initialDraft.draft?.selectionMode ?? 'manual');
+  const [randomQuantity, setRandomQuantity] = useState(initialDraft.draft?.randomQuantity ?? 3);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialDraft.draft?.cardIds ?? []);
   const [search, setSearch] = useState('');
   const [validation, setValidation] = useState('');
   const [reading, setReading] = useState<ManaraReading | null>(null);
@@ -107,6 +123,31 @@ function Home() {
   } | null>(null);
 
   const cards = offline.cards;
+  useEffect(() => {
+    if (!draftEnabled) return;
+    const storage = getStorage();
+    const empty = question.trim() === '' && selectedIds.length === 0;
+    const ok = empty ? clearReadingDraft(storage)
+      : saveReadingDraft(storage, { question, gender, mode, selectionMode, randomQuantity, cardIds: selectedIds });
+    setDraftStatus((cur) => ok
+      ? (empty ? (cur.kind === 'restored' ? cur : { kind: 'none', text: '' }) : { kind: 'saved', text: 'Черновик сохранён в этом браузере.' })
+      : { kind: 'error', text: 'Не удалось сохранить черновик: хранилище браузера недоступно. Форма работает как обычно.' });
+  }, [draftEnabled, question, gender, mode, selectionMode, randomQuantity, selectedIds]);
+  const deleteDraftAndDisable = () => {
+    const storage = getStorage();
+    const cleared = clearReadingDraft(storage);
+    const disabled = writeDraftEnabled(storage, false);
+    setDraftEnabled(false);
+    setDraftConfirm(null);
+    setDraftStatus(cleared && disabled
+      ? { kind: 'none', text: 'Черновик удалён, сохранение выключено. Открытая форма не тронута.' }
+      : { kind: 'error', text: 'Сохранение выключено, но браузер не подтвердил удаление или запись настройки. Очистите данные сайта в настройках браузера.' });
+  };
+  const enableDraft = () => {
+    const ok = writeDraftEnabled(getStorage(), true);
+    setDraftEnabled(true);
+    if (!ok) setDraftStatus({ kind: 'error', text: 'Сохранение включено, но настройку запомнить не удалось.' });
+  };
   const isPending = engine === 'server' ? readingMutation.isPending : offline.isPending;
   const serverErrorText = readingMutation.error instanceof Error ? readingMutation.error.message : 'Сервер вернул ошибку без описания.';
   const hasError = engine === 'server' ? readingMutation.isError : Boolean(deviceError);
@@ -213,7 +254,7 @@ function Home() {
       return;
     }
     if (engine === 'device' && !offline.isReady) {
-      setValidation('Сначала подготовьте локальную модель в блоке «Где работает ИИ» или явно выберите серверный режим.');
+      setValidation('Сначала подготовьте локальную модель во вкладке «Настройки» или явно выберите серверный режим.');
       return;
     }
     const payload = {
@@ -275,12 +316,43 @@ function Home() {
             </div>
           </div>
           <div className="top-note" data-testid="status-private-session">
-            <span className="status-dot" />{engine === 'device' ? 'Режим устройства: вопрос обрабатывается локально и не сохраняется' : 'Серверный режим: вопрос уходит провайдеру ИИ и не сохраняется'}
+            <span className="status-dot" />{engine === 'device' ? 'Разбор на устройстве' : 'Разбор через сервер'}
           </div>
         </header>
 
-        <ReadingSettings value={readingPreferences} onChange={changeReadingPreferences} saved={preferencesSaved} />
+        <nav className="view-tabs" aria-label="Разделы" data-testid="nav-views">
+          <button type="button" aria-pressed={view === 'spread'} data-testid="tab-spread" onClick={() => setView('spread')}>Расклад</button>
+          <button type="button" aria-pressed={view === 'settings'} data-testid="tab-settings" onClick={() => setView('settings')}>Настройки</button>
+        </nav>
 
+        <div hidden={view !== 'settings'} className="settings-view" data-testid="view-settings">
+          <AiSetupPanel offline={offline} engine={engine} serverBusy={readingMutation.isPending}
+            onEngineChange={(next) => { setEngine(next); setDeviceError(''); }} />
+          <ReadingSettings value={readingPreferences} onChange={changeReadingPreferences} saved={preferencesSaved} />
+          <section className="reading-settings" aria-labelledby="draft-title" data-testid="section-draft-settings">
+            <h2 id="draft-title">Черновик вопроса и карт</h2>
+            <p className="reading-settings-note">Вы согласились сохранять вопрос и порядок карт локально. Они лежат только в этом браузере, не зашифрованы и не отправляются на сервер. Готовый разбор не сохраняется никогда.</p>
+            <label className="draft-switch">
+              <input type="checkbox" checked={draftEnabled} data-testid="switch-draft-enabled"
+                onChange={(event) => { if (event.target.checked) enableDraft(); else setDraftConfirm('delete'); }} />
+              <span>Сохранять черновик на этом устройстве</span>
+            </label>
+            {draftStatus.text && <p className={`draft-status draft-${draftStatus.kind}`} role="status" data-testid="status-draft">{draftStatus.text}</p>}
+            {draftEnabled && !draftConfirm && <button type="button" className="retry-button" data-testid="button-delete-draft" onClick={() => setDraftConfirm('delete')}>Удалить черновик и отключить сохранение</button>}
+            {draftConfirm && (
+              <div className="ai-confirm" role="alertdialog" data-testid="dialog-draft-delete">
+                <strong>Удалить сохранённый черновик?</strong>
+                <p>Сохранённые вопрос и карты будут стёрты из браузера, дальнейшее сохранение выключится. Текущая форма останется как есть.</p>
+                <div className="ai-actions">
+                  <button type="button" className="draw-action" data-testid="button-confirm-delete-draft" onClick={deleteDraftAndDisable}>Удалить и отключить</button>
+                  <button type="button" className="retry-button" data-testid="button-cancel-delete-draft" onClick={() => setDraftConfirm(null)}>Оставить</button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div hidden={view !== 'spread'} data-testid="view-spread">
         <section className="intro" aria-labelledby="page-title">
           <div>
             <div className="eyebrow">Чтение начинается с вопроса</div>
@@ -330,8 +402,10 @@ function Home() {
             </div>
             <p className="privacy-note" data-testid="text-dictation-privacy-note">Диктовка доступна только в серверном режиме; обработка может выполняться речевым сервисом браузера. Аудио приложение не сохраняет и не отправляет.</p>
 
-            <AiSetupPanel offline={offline} engine={engine} serverBusy={readingMutation.isPending}
-              onEngineChange={(next) => { setEngine(next); setDeviceError(''); }} />
+            <div className="model-strip" role="status" data-testid="status-model-compact">
+              <span>{engine === 'server' ? 'Серверный ИИ' : offline.phase === 'ready' ? 'Модель готова' : offline.phase === 'loading' ? `Модель загружается${offline.progress > 0 ? ` · ${Math.round(offline.progress * 100)}%` : ''}` : offline.phase === 'generating' ? 'Идёт разбор' : offline.phase === 'error' ? 'Ошибка модели' : 'Модель не загружена'}</span>
+              <button type="button" className="retry-button" data-testid="button-go-settings" onClick={() => setView('settings')}>Перейти в настройки</button>
+            </div>
 
             <div className="field-label" id="gender-label">Пол вопрошающего</div>
             <div className="choice-row" role="group" aria-labelledby="gender-label" data-testid="group-querent-gender">
@@ -458,7 +532,7 @@ function Home() {
             </button>
             <div className="footer-note">
               <span><CircleHelp size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} />Карты не дают приговоров — только новый угол зрения.</span>
-              <span>{engine === 'device' ? <>вопрос обрабатывается<br />на этом устройстве</> : <>вопрос отправляется на сервер<br />только для этого разбора</>}</span>
+              <span>{engine === 'device' ? 'разбор выполняется на этом устройстве' : 'для разбора вопрос уйдёт на сервер'}</span>
             </div>
           </form>
 
@@ -551,6 +625,7 @@ function Home() {
               )}
             </div>
           </section>
+        </div>
         </div>
       </div>
     </main>

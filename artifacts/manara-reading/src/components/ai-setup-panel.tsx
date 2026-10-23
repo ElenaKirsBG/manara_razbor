@@ -40,7 +40,7 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
       <div className="engine-row" role="group" aria-label="Режим ИИ" data-testid="group-ai-engine">
         <button type="button" className="engine-button" aria-pressed={engine === 'device'} disabled={busy}
           data-testid="button-engine-device" onClick={() => onEngineChange('device')}>
-          <Smartphone size={14} /><span><strong>На устройстве</strong><em>по умолчанию, вопрос не уходит с телефона</em></span>
+          <Smartphone size={14} /><span><strong>На устройстве</strong><em>по умолчанию, разбор без отправки вопроса</em></span>
         </button>
         <button type="button" className="engine-button" aria-pressed={engine === 'server'} disabled={busy}
           data-testid="button-engine-server" onClick={() => onEngineChange('server')}>
@@ -50,14 +50,14 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
 
       {engine === 'server' && (
         <p className="ai-warning" data-testid="text-server-mode-warning">
-          Включён серверный режим: вопрос и выбранные карты будут отправлены на сервер и внешнему ИИ-провайдеру только для этого разбора. Приложение их не сохраняет. К серверу мы не переключаемся автоматически: при ошибке вы увидите её и решите сами.
+          Включён серверный режим: вопрос и выбранные карты будут отправлены на сервер и внешнему ИИ-провайдеру только для этого разбора; сервер их не хранит. К серверу мы не переключаемся автоматически: при ошибке вы увидите её и решите сами.
         </p>
       )}
 
       {engine === 'device' && (
         <div className="ai-device" data-testid="section-device-ai">
           <p className="ai-capability" role="status" data-testid="text-capability-message">{offline.capabilityMessage || 'Проверяем возможности браузера…'}</p>
-              <p className="ai-note" data-testid="text-startup-version">Запуск модели · версия 3 · исправлен JSON-формат</p>
+              <p className="ai-note" data-testid="text-startup-version">Запуск модели · версия 4 · настройки отдельно от расклада</p>
           {offline.startupNotice && (
             <p className="ai-warning" role="alert" data-testid="notice-interrupted-startup">{offline.startupNotice}</p>
           )}
@@ -151,7 +151,7 @@ export function AiSetupPanel({ offline, engine, onEngineChange, serverBusy }: Pr
                 running: 'в процессе', interrupted: 'завершение не подтверждено',
                 complete: 'завершено', error: 'ошибка', cancelled: 'отменено',
               })[offline.lastAttempt.status]}. Окно контекста: {offline.lastAttempt.contextTokens} токенов.</p>
-              <p className="ai-note">На телефоне сохраняются только эти технические сведения и выбор модели — без вопроса, карт и ответа.</p>
+              <p className="ai-note">Этот технический журнал не содержит вопроса, карт или ответа. Сохранение личного черновика включается и удаляется отдельно в настройках.</p>
             </details>
           )}
           <div className="ai-actions">

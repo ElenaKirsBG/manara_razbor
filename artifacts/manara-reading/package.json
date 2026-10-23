@@ -10,7 +10,7 @@
     "build": "pnpm run sync:offline && vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify:offline": "pnpm run sync:offline && node scripts/verify-offline.mjs && node scripts/verify-startup.mjs && node scripts/verify-response-format.mjs && node scripts/verify-reading-preferences.mjs"
+    "verify:offline": "pnpm run sync:offline && node scripts/verify-offline.mjs && node scripts/verify-startup.mjs && node scripts/verify-response-format.mjs && node scripts/verify-reading-preferences.mjs && node scripts/verify-reading-draft.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
