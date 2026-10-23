@@ -747,3 +747,54 @@ button { cursor: pointer; }
 .ai-details ol { padding-left:18px; line-height:1.65; margin:6px 0; }
 .error-state p.error-detail { margin-top:10px; padding:9px 11px; border-radius:8px; background:hsl(var(--muted)); color:hsl(var(--foreground)); font:11px var(--app-font-mono); word-break:break-word; text-align:left; }
 @media (max-width:700px) { .engine-row,.model-options { grid-template-columns:1fr; } .dictation-button:disabled { opacity:.46; } }
+
+/* Explicit readable sizes also replace the journal's old 9–14px captions.
+   The controls update variables only: no form remount or model restart. */
+.app-shell[data-reader-size] {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  font-size: var(--reader-font-size);
+}
+.app-shell[data-reader-size] *:not(svg):not(svg *) {
+  font-size: var(--reader-font-size) !important;
+}
+.app-shell[data-reader-size] :is(h1, h1 *) {
+  font-size: calc(var(--reader-font-size) * 2) !important;
+}
+.app-shell[data-reader-size] :is(h2, h2 *, h3, h3 *) {
+  font-size: calc(var(--reader-font-size) * 1.2) !important;
+}
+.app-shell[data-reader-size] :is(p, li, em, label, summary, .ai-note, .ai-capability, .brand-caption) {
+  line-height: 1.6;
+}
+.app-shell[data-reader-size] :is(button, input, select) { min-height: 44px; }
+.app-shell[data-reader-size] :is(button, label, p, summary, .brand-name, .brand-caption) {
+  overflow-wrap: anywhere;
+}
+.app-shell[data-reader-size] :is(.topbar, .panel-heading, .field-meta, .field-label, .ai-heading, .ai-actions, .progress-text) {
+  height: auto;
+  min-height: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.app-shell[data-reader-size] .topbar { padding: 20px 0; min-height: 88px; }
+.app-shell[data-reader-size] .brand-lockup { min-width: 0; }
+.app-shell[data-reader-size] .brand-mark { flex-shrink: 0; }
+.app-shell[data-reader-size] .question-field { min-height: 160px; }
+.app-shell[data-reader-size] .question-entry .question-field { padding-bottom: 65px; }
+.app-shell[data-reader-size] :is(input, textarea)::placeholder { color: hsl(var(--foreground) / .8); }
+.reading-settings { margin-top: 22px; padding: 18px; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card)); }
+.reading-settings h2 { margin: 0 0 16px; }
+.reading-settings fieldset { padding: 0; margin: 0 0 16px; border: 0; min-width: 0; }
+.reading-settings legend { margin-bottom: 8px; font-weight: 600; }
+.reading-setting-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.reading-setting-options button { display: inline-flex; align-items: center; gap: 9px; padding: 10px 14px; border: 1px solid hsl(var(--border)); border-radius: 9px; color: hsl(var(--foreground)); background: hsl(var(--card)); text-align: left; }
+.reading-setting-options button[aria-pressed="true"] { border: 2px solid hsl(var(--foreground)); padding: 9px 13px; background: hsl(var(--muted)); font-weight: 700; }
+.reading-setting-options button:focus-visible { outline: 3px solid hsl(var(--ring)); outline-offset: 3px; }
+.reading-color-dot { display: inline-block; flex: 0 0 18px; height: 18px; border-radius: 50%; }
+.reading-settings-note { margin: 0; }
+@media (max-width: 700px) {
+  .app-shell[data-reader-size] :is(.choice-row, .depth-options, .selection-tabs, .catalog-list) { grid-template-columns: 1fr; }
+  .app-shell[data-reader-size] .random-controls { flex-wrap: wrap; }
+  .app-shell[data-reader-size] .reading-setting-options button { flex: 1 1 100%; }
+}

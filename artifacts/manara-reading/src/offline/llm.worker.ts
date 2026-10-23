@@ -7,6 +7,7 @@ import {
   tokenizerUrl,
 } from "./models";
 import { contextForInput, START_CONTEXT_TOKENS } from "./startup-state";
+import { LOCAL_RESPONSE_FORMAT } from "./response-format";
 
 let engine: MLCEngine | null = null;
 let cancelled = false;
@@ -105,7 +106,7 @@ self.onmessage = async (event: MessageEvent) => {
       ],
       temperature: 0.35,
       max_tokens: LOCAL_OUTPUT_TOKENS,
-      response_format: { type: "json_object" },
+      response_format: LOCAL_RESPONSE_FORMAT,
       stream: true,
     });
     for await (const chunk of stream) {

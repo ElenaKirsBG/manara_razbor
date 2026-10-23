@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCreateManaraReading } from '@workspace/api-client-react';
@@ -19,6 +19,10 @@ import {
   X,
 } from 'lucide-react';
 import { AiSetupPanel, type Engine } from '@/components/ai-setup-panel';
+import { ReadingSettings } from '@/components/reading-settings';
+import {
+  readReadingPreferences, saveReadingPreferences, TEXT_COLORS, TEXT_SIZES, type ReadingPreferences,
+} from '@/lib/reading-preferences';
 import { useOfflineReading } from '@/hooks/use-offline-reading';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -60,6 +64,26 @@ type SpeechRecognitionWindow = Window & {
 
 function Home() {
   const offline = useOfflineReading();
+  const [readingPreferences, setReadingPreferences] = useState(() => {
+    try { return readReadingPreferences(window.localStorage); }
+    catch { return readReadingPreferences(); }
+  });
+  const [preferencesSaved, setPreferencesSaved] = useState(true);
+  const changeReadingPreferences = (next: ReadingPreferences) => {
+    setReadingPreferences(next);
+    try { setPreferencesSaved(saveReadingPreferences(window.localStorage, next)); }
+    catch { setPreferencesSaved(false); }
+  };
+  const textSize = TEXT_SIZES.find(item => item.id === readingPreferences.size)!;
+  const textColor = TEXT_COLORS.find(item => item.id === readingPreferences.color)!;
+  const readingStyle = {
+    "--reader-font-size": `${textSize.pixels}px`,
+    "--foreground": textColor.hsl,
+    "--muted-foreground": textColor.hsl,
+    "--card-foreground": textColor.hsl,
+    "--primary": textColor.hsl,
+    "--secondary-foreground": textColor.hsl,
+  } as CSSProperties;
   const [engine, setEngine] = useState<Engine>('device');
   const [deviceError, setDeviceError] = useState('');
   const readingMutation = useCreateManaraReading();
@@ -239,7 +263,8 @@ function Home() {
     : <span className="card-chip" aria-hidden="true">{card.rank || 'М'}</span>;
 
   return (
-    <main className="app-shell" data-testid="page-manara-reading">
+    <main className="app-shell" style={readingStyle} data-reader-size={readingPreferences.size}
+      data-reader-color={readingPreferences.color} data-testid="page-manara-reading">
       <div className="page-frame">
         <header className="topbar" data-testid="header-reading-journal">
           <div className="brand-lockup">
@@ -253,6 +278,8 @@ function Home() {
             <span className="status-dot" />{engine === 'device' ? 'Режим устройства: вопрос обрабатывается локально и не сохраняется' : 'Серверный режим: вопрос уходит провайдеру ИИ и не сохраняется'}
           </div>
         </header>
+
+        <ReadingSettings value={readingPreferences} onChange={changeReadingPreferences} saved={preferencesSaved} />
 
         <section className="intro" aria-labelledby="page-title">
           <div>
@@ -465,7 +492,7 @@ function Home() {
                 <div className="error-state" role="alert" data-testid="status-reading-error">
                   <div className="error-symbol"><AlertCircle size={20} /></div>
                   <h3>Не получилось прочитать расклад</h3>
-                  <p>{engine === 'device' ? 'Локальная модель не справилась. Возможны нехватка памяти или слабая модель; попробуйте компактную. Ваш вопрос и карты сохранены.' : 'Сервер вернул ошибку; автоматических повторов нет. Ваш вопрос и карты сохранены.'}</p>
+                  <p>{engine === 'device' ? 'Локальный разбор не завершён. Причина указана ниже — это не обязательно нехватка памяти или ограничение модели. Вопрос и карты остались в открытой форме; не обновляйте страницу.' : 'Сервер вернул ошибку; автоматических повторов нет. Ваш вопрос и карты остались в открытой форме.'}</p>
                   <p className="error-detail" data-testid="text-reading-error-detail">{engine === 'device' ? deviceError : serverErrorText}</p>
                   <button type="button" className="retry-button" data-testid="button-retry-reading" onClick={retryReading}>Повторить разбор</button>
                 </div>
